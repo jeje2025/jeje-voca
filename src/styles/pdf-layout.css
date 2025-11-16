@@ -207,12 +207,41 @@
     margin: 12mm 0;
   }
 
+  html,
   body {
     background: #ffffff !important;
+    background-color: #ffffff !important;
+    background-image: none !important;
     margin: 0 !important;
     padding: 0 !important;
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
+  }
+
+  /* 모든 배경 요소 제거 */
+  body * {
+    background-image: none !important;
+  }
+
+  /* 앱 배경 제거 */
+  .app-background,
+  [class*="gradient"],
+  [class*="background"] {
+    background: transparent !important;
+    background-color: transparent !important;
+    background-image: none !important;
+  }
+
+  /* 모든 것을 흰색 배경으로 */
+  .pdf-print-root,
+  .pdf-print-root * {
+    background-color: white !important;
+  }
+
+  /* 테이블/카드의 특정 배경은 유지 */
+  .pdf-print-root .bg-slate-100\/80,
+  .pdf-print-root [class*="bg-slate"] {
+    background-color: #f1f5f9 !important;
   }
 
   /* 인쇄용 레이아웃만 표시 */
@@ -226,12 +255,20 @@
     margin: 0 auto !important;
     padding: 0 !important;
     display: block !important;
+    background: white !important;
   }
 
   body.pdf-print-page .app-print-hidden {
     display: none !important;
     height: 0 !important;
     overflow: hidden !important;
+  }
+
+  /* 루트 요소의 배경도 제거 */
+  #root {
+    background: white !important;
+    background-color: white !important;
+    background-image: none !important;
   }
 
   #pdf-print-layout {
