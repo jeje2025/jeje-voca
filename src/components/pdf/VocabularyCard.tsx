@@ -79,7 +79,9 @@ const VocabularyCardComponent = ({
         overflow: 'visible',
         marginBottom: '12px',
         pageBreakInside: 'avoid',
-        breakInside: 'avoid'
+        breakInside: 'avoid',
+        WebkitColumnBreakInside: 'avoid',
+        display: 'block'
       }}
     >
       <div style={{ overflow: 'visible' }}>

@@ -257,13 +257,22 @@
     position: relative;
     page-break-after: auto !important;
     break-after: auto !important;
+    display: block !important;
+  }
+
+  .pdf-print-root .page-content {
+    display: block !important;
   }
 
   .pdf-print-root .vocabulary-card {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
     -webkit-column-break-inside: avoid !important;
+    page-break-before: auto !important;
+    page-break-after: auto !important;
     margin-bottom: 10px;
+    display: block !important;
+    overflow: visible !important;
   }
 
   .pdf-print-root table {

@@ -19,6 +19,8 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { FullCalendarScreen } from './components/FullCalendarScreen';
 import ExportPage from './ExportPage';
 import ExportPrintPage from './ExportPrintPage';
+import { AdminAdmissionApp } from './admission/admin/AdminAdmissionApp';
+import { StudentCalendarScreen } from './admission/student/CalendarScreen';
 import profileImage from 'figma:asset/1627f3a870e9b56d751d07f53392d7a84aa55817.png';
 import { projectId, publicAnonKey } from './utils/supabase/info';
 import { useAuth } from './hooks/useAuth';
@@ -49,6 +51,14 @@ export interface Subject {
 
 export default function App() {
   // Export Route - Check first before any other logic
+  if (window.location.pathname.startsWith('/admin/admission')) {
+    return <AdminAdmissionApp />;
+  }
+
+  if (window.location.pathname.startsWith('/student/calendar')) {
+    return <StudentCalendarScreen />;
+  }
+
   if (window.location.pathname.startsWith('/export/print')) {
     return <ExportPrintPage />;
   }
