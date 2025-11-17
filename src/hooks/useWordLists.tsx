@@ -198,6 +198,8 @@ export function useWordLists(getAuthToken: () => string | null) {
       console.log(`❌ Added wrong answer: ${wordId}`);
     } catch (error) {
       console.error('❌ Error adding wrong answer:', error);
+      // 서버 동기화 실패 시 롤백
+      setWrongAnswersWords(prev => prev.filter(id => id !== wordId));
     }
   }, [wrongAnswersWords, apiCall]);
 

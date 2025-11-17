@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  ArrowLeft, 
+import {
   BookOpen,
   ChevronRight
 } from 'lucide-react';
+import { StandardHeader } from './StandardHeader';
 import { toast } from 'sonner@2.0.3';
 import { WordSelectionScreen } from './WordSelectionScreen';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
@@ -165,28 +165,14 @@ export function VideosScreen({ onBack, getAuthToken }: VideosScreenProps) {
 
   return (
     <div className="h-full flex flex-col bg-gradient-to-b from-[#E8E0FF] to-[#F0EBFF]">
-      {/* Header */}
-      <div className="bg-gradient-to-b from-[#E0D5FF] to-[#E8E0FF] px-4 py-6 pb-8">
-        <div className="flex items-center gap-3 mb-4">
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            onClick={onBack}
-            className="w-10 h-10 bg-white/40 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/50"
-          >
-            <ArrowLeft className="w-5 h-5 text-[#491B6D]" />
-          </motion.button>
-          
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-white/40 rounded-lg flex items-center justify-center">
-              <BookOpen className="w-5 h-5 text-[#491B6D]" />
-            </div>
-            <div>
-              <h1 className="text-[#491B6D]">선물상자</h1>
-              <p className="text-[#491B6D]/70 text-xs">단어장을 다운로드해서 학습을 시작하세요</p>
-            </div>
-          </div>
-        </div>
+      <StandardHeader
+        onBack={onBack}
+        title="선물상자"
+        subtitle="단어장을 다운로드해서 학습을 시작하세요"
+      />
 
+      {/* Category Tabs */}
+      <div className="px-4 pb-4">
         {/* Category Tabs */}
         <div 
           ref={scrollContainerRef}

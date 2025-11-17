@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Gift, BookOpen, ArrowLeft, Download, ChevronRight, Search, Filter, X, Plus, ChevronLeft } from 'lucide-react';
+import { Gift, BookOpen, Download, ChevronRight, Search, Filter, X, Plus, ChevronLeft } from 'lucide-react';
+import { StandardHeader } from './StandardHeader';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 
 interface SharedVocabulary {
@@ -127,29 +128,11 @@ export function GiftScreen({ onBack, onSelectVocabulary }: GiftScreenProps) {
 
   return (
     <div className="h-full flex flex-col bg-transparent">
-      {/* Header */}
-      <div className="relative overflow-hidden" style={{ background: 'transparent' }}>
-        <div className="flex items-center justify-between p-6 backdrop-blur-xl border-b border-white/20">
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            onClick={onBack}
-            className="w-11 h-11 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg border border-white/40"
-          >
-            <ArrowLeft className="w-5 h-5 text-[#491B6D]" />
-          </motion.button>
-          
-          <div className="flex items-center gap-3">
-            <div className="text-center">
-              <h1 className="text-lg" style={{ fontWeight: 700, color: '#491B6D' }}>
-                Presets
-              </h1>
-              <p className="text-xs" style={{ color: '#6B7280' }}>공유된 단어장을 다운로드하세요</p>
-            </div>
-          </div>
-          
-          <div className="w-11 h-11" />
-        </div>
-      </div>
+      <StandardHeader
+        onBack={onBack}
+        title="Presets"
+        subtitle="공유된 단어장을 다운로드하세요"
+      />
 
       {/* Sticky Header */}
       <div className="sticky top-0 z-40 backdrop-blur-lg pb-2" style={{ background: 'transparent' }}>

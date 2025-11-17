@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, Printer, LayoutGrid, Table2, Rows3, Sparkles, ListChecks, FileCheck2 } from 'lucide-react';
+import { Printer, LayoutGrid, Table2, Rows3, Sparkles, ListChecks, FileCheck2 } from 'lucide-react';
 import { Suspense, lazy } from 'react';
+import { StandardHeader } from './StandardHeader';
 import '../styles/pdf-layout.css';
 
 const LayoutCard = lazy(() => import('./pdf/VocabularyCard').then(m => ({ default: m.VocabularyCard })));
@@ -225,36 +226,17 @@ export function PDFPrintScreen({ onBack, vocabularyId, vocabularyTitle, words }:
     <>
       <style dangerouslySetInnerHTML={{ __html: PRINT_STYLES }} />
       <div className="h-full flex flex-col bg-gradient-to-b from-[#D4C5FF] to-[#E5D9FF] pdf-print-overlay pdf-print-root">
-        <div className="sticky top-0 z-40 backdrop-blur-lg" style={{ background: 'transparent' }}>
-          <div className="flex items-center justify-between p-4">
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              onClick={onBack}
-              className="w-12 h-12 bg-white/40 backdrop-blur-sm rounded-full flex items-center justify-center shadow-md"
-            >
-              <ArrowLeft className="w-5 h-5 text-[#091A7A]" />
-            </motion.button>
-
-            <div className="flex flex-col items-center">
-              <h1 className="text-[#091A7A]" style={{ fontSize: '18px', fontWeight: 600 }}>
-                PDF 인쇄
-              </h1>
-              <p className="text-[#6B7280]" style={{ fontSize: '12px', fontWeight: 500 }}>
-                인쇄할 형식을 선택하세요
-              </p>
-            </div>
-
-            <div className="w-12 h-12" />
-          </div>
-        </div>
+        <StandardHeader
+          onBack={onBack}
+          title="PDF 인쇄"
+          subtitle="인쇄할 형식을 선택하세요"
+        />
 
         <main className="flex-1 overflow-y-auto scrollbar-hide px-4 pt-4 pb-28 space-y-6">
           <section className="max-w-4xl mx-auto bg-white/90 backdrop-blur-lg rounded-2xl border border-white/50 shadow-lg p-4">
             <p className="text-sm text-gray-500">현재 단어장</p>
             <p className="text-xl font-bold text-[#091A7A]">{vocabularyTitle || '단어장 선택 필요'}</p>
-            <div className="flex flex-wrap items-center gap-3 text-xs text-gray-400 font-mono mt-2">
-              <span>ID: {vocabularyId || '—'}</span>
-              <span>•</span>
+            <div className="flex flex-wrap items-center gap-3 text-xs text-gray-400 mt-2">
               <span>{pdfWords.length.toLocaleString()}개의 단어</span>
             </div>
           </section>

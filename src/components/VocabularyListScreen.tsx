@@ -17,6 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 interface VocabularyListScreenProps {
   onBack: () => void;
   onSelectVocabulary: (vocabularyId: string, vocabularyTitle: string) => void;
+  onStartFlashcards?: (vocabularyId: string, vocabularyTitle: string) => void;
   getAuthToken?: () => string;
 }
 
@@ -38,7 +39,7 @@ interface VocabularyUnit {
   isExpanded: boolean;
 }
 
-export function VocabularyListScreen({ onBack, onSelectVocabulary, getAuthToken }: VocabularyListScreenProps) {
+export function VocabularyListScreen({ onBack, onSelectVocabulary, onStartFlashcards, getAuthToken }: VocabularyListScreenProps) {
   const [units, setUnits] = useState<VocabularyUnit[]>([]);
   const [myOwnVocabularies, setMyOwnVocabularies] = useState<any[]>([]);
   const [myOwnExpanded, setMyOwnExpanded] = useState(false);
@@ -373,9 +374,20 @@ export function VocabularyListScreen({ onBack, onSelectVocabulary, getAuthToken 
                               </span>
                             </div>
 
-                            {/* Status Icon - Simple */}
+                            {/* Flashcard Start Button */}
                             <div className="flex-shrink-0">
-                              <PlayCircle className="w-5 h-5 text-[#8B5CF6]" />
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (onStartFlashcards) {
+                                    onStartFlashcards(item.id, item.title);
+                                  }
+                                }}
+                                className="p-1.5 hover:bg-purple-100 rounded-lg transition-colors"
+                                title="플래시카드 시작"
+                              >
+                                <PlayCircle className="w-5 h-5 text-[#8B5CF6]" />
+                              </button>
                             </div>
 
                             {/* Edit/Delete Buttons */}

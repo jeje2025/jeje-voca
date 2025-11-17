@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { 
-  LayoutDashboard, 
-  BookOpen, 
-  Upload, 
-  Settings, 
+import {
+  LayoutDashboard,
+  BookOpen,
+  Upload,
+  Settings,
   X,
   Users,
   Download,
@@ -16,7 +16,8 @@ import {
   CheckCircle,
   XCircle,
   Shield,
-  Save
+  Save,
+  Calendar
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
@@ -86,6 +87,14 @@ export function AdminDashboard({ onClose }: AdminDashboardProps) {
               label="Categories"
               active={currentScreen === 'categories'}
               onClick={() => setCurrentScreen('categories')}
+            />
+            <SidebarButton
+              icon={<Calendar className="w-5 h-5" />}
+              label="입시 관리"
+              active={false}
+              onClick={() => {
+                window.location.href = '/admin/admission';
+              }}
             />
           </nav>
 

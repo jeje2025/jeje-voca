@@ -248,9 +248,7 @@ export default function ExportPage() {
                 {pdfWords.length ? `${pdfWords.length.toLocaleString()}개 단어` : '단어장 로딩 필요'}
               </p>
             </div>
-            <div className="text-sm text-gray-400 font-mono bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
-              ID: {currentVocabId || '—'}
-            </div>
+{/* ID는 개발용으로만 표시 - 프로덕션에서는 숨김 */}
           </div>
 
           {isLoading && (

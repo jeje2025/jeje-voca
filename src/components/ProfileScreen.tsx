@@ -6,7 +6,6 @@ import { BackButton } from './BackButton';
 interface ProfileScreenProps {
   onBack: () => void;
   userXP: number;
-  streakCount: number;
   profileImage: string;
   levelProgress: {
     currentLevel: number;
@@ -29,7 +28,7 @@ const stats = [
   { label: "Avg. Score", value: "87%", icon: TrendingUp, color: "from-green-400 to-green-600" }
 ];
 
-export function ProfileScreen({ onBack, userXP, streakCount, profileImage, levelProgress }: ProfileScreenProps) {
+export function ProfileScreen({ onBack, userXP, profileImage, levelProgress }: ProfileScreenProps) {
   const currentLevel = levelProgress.currentLevel;
   const xpForNextLevel = levelProgress.xpForNextLevel - levelProgress.xpInCurrentLevel;
   const levelProgressPercent = (levelProgress.xpInCurrentLevel / levelProgress.xpForNextLevel) * 100;
@@ -107,8 +106,7 @@ export function ProfileScreen({ onBack, userXP, streakCount, profileImage, level
                 <stat.icon className="w-5 h-5 text-white" />
               </div>
               <p className="text-2xl font-bold text-[#091A7A]">
-                {stat.label === "Total XP" ? userXP.toLocaleString() : 
-                 stat.label === "Current Streak" ? `${streakCount} days` : stat.value}
+                {stat.label === "Total XP" ? userXP.toLocaleString() : stat.value}
               </p>
               <p className="text-xs text-[#091A7A]/70">{stat.label}</p>
             </motion.div>

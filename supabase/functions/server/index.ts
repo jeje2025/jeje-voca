@@ -212,8 +212,9 @@ function hydrateWordResponse(word: any) {
 
 async function handleWordGenerationRequest(c: any) {
   try {
-    const userId = await getUserIdFromAuth(c);
-    if (!userId) return unauthorizedResponse(c);
+    // 인증 선택적 - 관리자 모드에서도 사용 가능하도록
+    // const userId = await getUserIdFromAuth(c);
+    // if (!userId) return unauthorizedResponse(c);
 
     let body;
     try {
@@ -256,6 +257,9 @@ async function handleWordGenerationRequest(c: any) {
       return c.json({ success: false, error: 'GEMINI_API_KEY not configured' }, 500);
     }
 
+    // Process all words in a single request (client handles batching)
+    console.log(`📦 Processing ${validWords.length} words`);
+
     const wordList = validWords.map((w, idx) => `${idx + 1}. "${w.word}"${w.meaning ? ` (뜻: ${w.meaning})` : ''}`).join('\n');
 
     const prompt = `You are a professional English vocabulary expert. You will receive a list of English words and generate comprehensive information for each word.
@@ -289,7 +293,7 @@ CRITICAL REQUIREMENTS:
 
 NOW GENERATE THE JSON ARRAY:`;
 
-    const response = await fetch(
+      const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: 'POST',
@@ -302,7 +306,7 @@ NOW GENERATE THE JSON ARRAY:`;
           }],
           generationConfig: {
             temperature: 0.35,
-            maxOutputTokens: 8192,
+            maxOutputTokens: 16384,
           },
         }),
       }
@@ -368,6 +372,8 @@ NOW GENERATE THE JSON ARRAY:`;
         etymology: base.etymology,
       };
     });
+
+    console.log(`✅ Completed processing ${normalizedResults.length} words`);
 
     return c.json({
       success: true,

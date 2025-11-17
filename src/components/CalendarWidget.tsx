@@ -33,44 +33,45 @@ export function CalendarWidget({ onClick }: CalendarWidgetProps) {
       transition={{ delay: 0.4, duration: 0.5 }}
       onClick={onClick}
       whileTap={{ scale: 0.98 }}
-      className="p-6 bg-card-glass backdrop-blur-lg rounded-[20px] shadow-card border border-white/20 cursor-pointer"
+      className="p-6 bg-white/95 backdrop-blur-xl rounded-[24px] shadow-lg border border-gray-100 cursor-pointer"
     >
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="text-section-header text-[#091A7A]">September 2025</h3>
-        <div className="flex items-center gap-1">
+      <div className="flex items-center justify-between mb-5">
+        <h3 className="text-[18px] font-bold text-[#091A7A]">September 2025</h3>
+        <div className="flex items-center gap-2">
           <motion.button
-            whileTap={{ scale: 0.95 }}
-            className="w-8 h-8 flex items-center justify-center rounded-[12px] transition-all duration-200"
+            whileTap={{ scale: 0.9 }}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-50 hover:bg-gray-100 transition-all duration-200"
           >
-            <ChevronLeft className="w-4 h-4 text-[#091A7A] stroke-[1.5]" />
+            <ChevronLeft className="w-4 h-4 text-[#091A7A]" />
           </motion.button>
           <motion.button
-            whileTap={{ scale: 0.95 }}
-            className="w-8 h-8 flex items-center justify-center rounded-[12px] transition-all duration-200"
+            whileTap={{ scale: 0.9 }}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-50 hover:bg-gray-100 transition-all duration-200"
           >
-            <ChevronRight className="w-4 h-4 text-[#091A7A] stroke-[1.5]" />
+            <ChevronRight className="w-4 h-4 text-[#091A7A]" />
           </motion.button>
         </div>
       </div>
-      
-      <div className="grid grid-cols-7 gap-2">
+
+      <div className="grid grid-cols-7 gap-3">
         {daysInWeek.map((day) => (
-          <div key={day.id} className="text-center text-tiny text-[#6B7280] font-medium py-2">
+          <div key={day.id} className="text-center text-[11px] text-gray-400 font-semibold uppercase tracking-wide py-1">
             {day.label}
           </div>
         ))}
-        
+
         {weekDates.map((dateObj, index) => (
           <motion.button
             key={dateObj.id}
             initial={{ scale: 0, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            transition={{ delay: 0.6 + index * 0.04, type: "spring", stiffness: 300 }}
+            transition={{ delay: 0.6 + index * 0.05, type: "spring", stiffness: 400, damping: 15 }}
+            whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.95 }}
-            className={`w-9 h-9 flex items-center justify-center rounded-[18px] text-small font-medium transition-all duration-200 ${
+            className={`aspect-square flex items-center justify-center rounded-full text-[12px] font-medium transition-all duration-200 ${
               dateObj.date === today
-                ? 'bg-[#ADC8FF] text-[#091A7A] shadow-interactive border border-white/20'
-                : 'text-[#6B7280]'
+                ? 'bg-[#ADC8FF] text-[#091A7A] shadow-md'
+                : 'text-gray-500 hover:bg-gray-50'
             }`}
           >
             {dateObj.date}

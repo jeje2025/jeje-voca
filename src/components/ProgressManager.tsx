@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 
 export interface UserProgress {
   userXP: number;
-  streakCount: number;
   currentProgress: number;
   totalQuizzesCompleted: number;
   completedStages: number[];
@@ -29,7 +28,6 @@ export interface Achievement {
 
 interface ProgressManagerProps {
   userXP: number;
-  streakCount: number;
   currentProgress: number;
   totalQuizzesCompleted: number;
   lastActiveDate?: string;
@@ -39,13 +37,12 @@ interface ProgressManagerProps {
 const STORAGE_KEY = 'learningAppProgress';
 const BACKUP_KEY = 'learningAppProgress_backup';
 
-export function ProgressManager({ 
-  userXP, 
-  streakCount, 
-  currentProgress, 
+export function ProgressManager({
+  userXP,
+  currentProgress,
   totalQuizzesCompleted,
   lastActiveDate,
-  onProgressLoaded 
+  onProgressLoaded
 }: ProgressManagerProps) {
 
   // Calculate level from XP
@@ -128,7 +125,6 @@ export function ProgressManager({
   // Create default progress
   const createDefaultProgress = (): UserProgress => ({
     userXP: 5500,
-    streakCount: 3,
     currentProgress: 40,
     totalQuizzesCompleted: 2,
     completedStages: [],
@@ -159,7 +155,6 @@ export function ProgressManager({
   useEffect(() => {
     const currentProgress_data: UserProgress = {
       userXP,
-      streakCount,
       currentProgress,
       totalQuizzesCompleted,
       completedStages: [], // This would be updated from GameMapQuizScreen
@@ -177,13 +172,12 @@ export function ProgressManager({
     }, 1000);
 
     return () => clearTimeout(timeoutId);
-  }, [userXP, streakCount, currentProgress, totalQuizzesCompleted, lastActiveDate]);
+  }, [userXP, currentProgress, totalQuizzesCompleted, lastActiveDate]);
 
   // Export function to manually save progress
   const manualSave = () => {
     const currentProgressData: UserProgress = {
       userXP,
-      streakCount,
       currentProgress,
       totalQuizzesCompleted,
       completedStages: [],
@@ -194,7 +188,7 @@ export function ProgressManager({
       achievements: [],
       levelProgress: calculateLevel(userXP)
     };
-    
+
     saveProgress(currentProgressData);
   };
 

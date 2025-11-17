@@ -76,39 +76,41 @@ export function BottomNavigation({ currentScreen, onScreenChange }: BottomNaviga
       transition={{ delay: 1, duration: 0.6, ease: "easeOut" }}
       className="fixed bottom-6 left-4 right-4 z-50"
     >
-      <div className="bg-[#091A7A]/95 backdrop-blur-lg relative rounded-[50px] h-20 w-80 mx-auto shadow-elevated border border-white/20">
+      <div className="bg-[#091A7A]/95 backdrop-blur-lg relative rounded-[50px] mx-auto shadow-elevated border border-white/20" style={{ width: '320px', height: '80px' }}>
         {/* Active indicator with design system colors */}
-        <motion.div 
-          className="absolute bg-white rounded-full w-15 h-15 top-1/2 -translate-y-1/2 shadow-interactive"
-          animate={{ 
+        <motion.div
+          className="absolute bg-white rounded-full shadow-interactive"
+          style={{ width: '60px', height: '60px', top: '10px' }}
+          animate={{
             left: `${indicatorPositions[getActiveIndex()]}px`
           }}
           transition={{ duration: 0.3, ease: "easeInOut" }}
         />
-        
+
         {/* Navigation Icons with perfect alignment */}
-        <div className="absolute inset-0 flex items-center">
-          <div className="relative w-full h-full">
-            {navItems.map((item, index) => (
-              <motion.button
-                key={index}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => onScreenChange(item.screen)}
-                className="absolute top-1/2 -translate-y-1/2 z-10 w-15 h-15 flex items-center justify-center rounded-full transition-all duration-200"
-                style={{
-                  left: `${iconPositions[index]}px`
-                }}
-              >
-                <NavigationIcon 
-                  src={item.icon} 
+        <div className="absolute inset-0">
+          {navItems.map((item, index) => (
+            <motion.button
+              key={index}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => onScreenChange(item.screen)}
+              className="absolute z-10 flex items-center justify-center rounded-full transition-all duration-200"
+              style={{
+                left: `${iconPositions[index]}px`,
+                width: '60px',
+                height: '60px',
+                top: '10px'
+              }}
+            >
+                <NavigationIcon
+                  src={item.icon}
                   IconComponent={item.IconComponent}
-                  active={item.active} 
+                  active={item.active}
                   isEmoji={item.isEmoji}
                   emojiText={item.emojiText}
                 />
               </motion.button>
             ))}
-          </div>
         </div>
       </div>
     </motion.div>

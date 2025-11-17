@@ -111,16 +111,29 @@ export function WordListScreen({ onBack, onBackToHome, vocabularyTitle, unitName
   // 필터링된 단어 목록 생성
   const getFilteredWords = () => {
     let filtered = baseWords;
-    
+
     if (filterType === 'starred') {
-      // 별표된 단어만 필터링
-      filtered = baseWords.filter(w => starredWordIds.includes(w.id));
+      // 서버에서 이미 별표된 단어만 반환하므로, 추가 필터링 불필요
+      // 단, baseWords가 비어있으면 로컬 ID 기반으로 필터링 시도
+      if (baseWords.length === 0 && starredWordIds.length > 0) {
+        filtered = [];
+      } else {
+        filtered = baseWords;
+      }
     } else if (filterType === 'graveyard') {
-      // 무덤 단어만 필터링
-      filtered = baseWords.filter(w => graveyardWordIds.includes(w.id));
+      // 서버에서 이미 무덤 단어만 반환
+      if (baseWords.length === 0 && graveyardWordIds.length > 0) {
+        filtered = [];
+      } else {
+        filtered = baseWords;
+      }
     } else if (filterType === 'wrong-answers') {
-      // 오답 단어만 필터링
-      filtered = baseWords.filter(w => wrongAnswersWordIds.includes(w.id));
+      // 서버에서 이미 오답 단어만 반환
+      if (baseWords.length === 0 && wrongAnswersWordIds.length > 0) {
+        filtered = [];
+      } else {
+        filtered = baseWords;
+      }
     } else {
       // 일반 단어장: 무덤 단어는 제외하고 별표 상태 반영
       filtered = baseWords.filter(w => !graveyardWordIds.includes(w.id));

@@ -267,18 +267,22 @@ export function VocabularyInputAdvanced({ onSave, initialData = [], data, fullsc
     }
   };
 
+  // 병렬 처리 설정
+  const BATCH_SIZE = 20;
+  const CONCURRENCY_LIMIT = 3;
+
   // Gemini API로 부족한 정보 생성 (백엔드 호출 - 배치 모드) - 재시도 로직 포함
   const generateMissingDataBatch = async (items: CellData[], retries = 3): Promise<{ items: VocabularyItem[], inputTokens: number, outputTokens: number }> => {
     try {
       // 빈 단어 필터링
       const validItems = items.filter(item => item.word && item.word.trim() !== '');
-      
+
       if (validItems.length === 0) {
         console.error('생성할 단어가 없습니다');
         return { items: [], inputTokens: 0, outputTokens: 0 };
       }
-      
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-7e289e1b/generate-word-info`, {
+
+      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/server/generate-vocabulary-batch`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -299,19 +303,19 @@ export function VocabularyInputAdvanced({ onSave, initialData = [], data, fullsc
       }
 
       const result = await response.json();
-      
+
       if (!result.success) {
         throw new Error(result.error || 'Generation failed');
       }
 
-      const generatedArray = result.data;
+      const generatedArray = result.results || result.data || [];
       const inputTokens = result.inputTokens || 0;
       const outputTokens = result.outputTokens || 0;
 
       // 생성된 데이터와 원본 데이터를 병합
       const vocabularyItems = validItems.map((item, index) => {
         const generated = generatedArray[index] || {};
-        
+
         return {
           id: 0,
           word: item.word,
@@ -328,18 +332,18 @@ export function VocabularyInputAdvanced({ onSave, initialData = [], data, fullsc
           etymology: generated.etymology || ''
         };
       });
-      
+
       return { items: vocabularyItems, inputTokens, outputTokens };
     } catch (error) {
       console.error('API 오류:', error);
-      
+
       // 재시도 로직
       if (retries > 0) {
         console.log(`재시도 중... (남은 횟수: ${retries})`);
         await new Promise(resolve => setTimeout(resolve, 2000)); // 2초 대기
         return generateMissingDataBatch(items, retries - 1);
       }
-      
+
       // 최종 실패 시 기본값 반환
       return { items: items.map(item => ({
         id: 0,
@@ -359,11 +363,85 @@ export function VocabularyInputAdvanced({ onSave, initialData = [], data, fullsc
     }
   };
 
-  // 저장 처리 (20개씩 배치 처리) - 파라미터 rows를 받을 수 있도록
+  // 병렬 배치 처리 함수
+  const generateWordsInBatchesParallel = async (items: CellData[]): Promise<{ items: VocabularyItem[], inputTokens: number, outputTokens: number }> => {
+    const batches: CellData[][] = [];
+    for (let i = 0; i < items.length; i += BATCH_SIZE) {
+      batches.push(items.slice(i, i + BATCH_SIZE));
+    }
+
+    const allResults: { index: number; items: VocabularyItem[] }[] = [];
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let completedCount = 0;
+
+    // Helper function to fetch single batch with retry
+    const fetchBatchWithRetry = async (batch: CellData[], batchIndex: number) => {
+      const result = await generateMissingDataBatch(batch);
+      return {
+        index: batchIndex,
+        items: result.items,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens
+      };
+    };
+
+    // Process batches with limited concurrency
+    const processBatchGroup = async (startIndex: number) => {
+      const endIndex = Math.min(startIndex + CONCURRENCY_LIMIT, batches.length);
+      const batchPromises = [];
+
+      for (let i = startIndex; i < endIndex; i++) {
+        batchPromises.push(fetchBatchWithRetry(batches[i], i));
+      }
+
+      const results = await Promise.all(batchPromises);
+
+      for (const result of results) {
+        allResults.push({ index: result.index, items: result.items });
+        totalInputTokens += result.inputTokens;
+        totalOutputTokens += result.outputTokens;
+        completedCount++;
+
+        // Update progress toast
+        if (batches.length > 1) {
+          toast.loading(
+            `AI가 단어를 분석 중... (${completedCount}/${batches.length} 배치, ${Math.min(completedCount * BATCH_SIZE, items.length)}/${items.length}개)`,
+            { id: 'generating', duration: Infinity }
+          );
+        }
+      }
+
+      return endIndex;
+    };
+
+    // Process all batches in groups of CONCURRENCY_LIMIT
+    let currentIndex = 0;
+    while (currentIndex < batches.length) {
+      currentIndex = await processBatchGroup(currentIndex);
+
+      // Small delay between batch groups to avoid rate limiting
+      if (currentIndex < batches.length) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+    }
+
+    // Sort results by original index to maintain word order
+    allResults.sort((a, b) => a.index - b.index);
+    const finalItems = allResults.flatMap(r => r.items);
+
+    return {
+      items: finalItems,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens
+    };
+  };
+
+  // 저장 처리 (병렬 배치 처리) - 파라미터 rows를 받을 수 있도록
   const handleSave = async (targetRows?: CellData[]) => {
     const rowsToProcess = targetRows || rows; // ⭐ 파라미터가 있으면 그걸 사용
     const nonEmptyRows = rowsToProcess.filter(row => row.word && row.word.trim() !== '');
-    
+
     console.log('=== handleSave 시작 ===');
     console.log('전체 행 수:', rowsToProcess.length);
     console.log('비어있지 않은 행 수:', nonEmptyRows.length);
@@ -375,67 +453,45 @@ export function VocabularyInputAdvanced({ onSave, initialData = [], data, fullsc
     }
 
     setIsGenerating(true);
-    
-    // 생성 시작 메시지 제거 - 바로 loading 메시지로 시작
-    
-    try {
-      const BATCH_SIZE = 20; // maxOutputTokens 8192 제한에 맞춤
-      const allGeneratedItems: VocabularyItem[] = [];
-      let totalInputTokens = 0;
-      let totalOutputTokens = 0;
-      const totalBatches = Math.ceil(nonEmptyRows.length / BATCH_SIZE);
 
-      // 20개씩 묶어서 처리
-      for (let i = 0; i < nonEmptyRows.length; i += BATCH_SIZE) {
-        const batch = nonEmptyRows.slice(i, i + BATCH_SIZE);
-        const currentBatch = Math.floor(i / BATCH_SIZE) + 1;
-        
-        console.log(`처리 중: ${i + 1}~${Math.min(i + BATCH_SIZE, nonEmptyRows.length)} / ${nonEmptyRows.length}`);
-        console.log('배치 데이터:', batch.map(b => ({ word: b.word, meaning: b.meaning })));
-        
-        // 배치 생성 중 메시지 - 단어 개수 반영
-        if (totalBatches > 1) {
-          toast.loading(`AI가 ${nonEmptyRows.length}개 단어를 분석하고 있습니다... (${currentBatch}/${totalBatches})`, {
-            id: 'generating',
-            duration: Infinity
-          });
-        } else {
-          toast.loading(`AI가 ${nonEmptyRows.length}개 단어를 분석하고 있습니다...`, {
-            id: 'generating',
-            duration: Infinity
-          });
-        }
-        
-        const batchResults = await generateMissingDataBatch(batch);
-        allGeneratedItems.push(...batchResults.items);
-        totalInputTokens += batchResults.inputTokens;
-        totalOutputTokens += batchResults.outputTokens;
-      }
-      
+    // 생성 시작 메시지
+    toast.loading(`AI가 ${nonEmptyRows.length}개 단어를 분석하고 있습니다...`, {
+      id: 'generating',
+      duration: Infinity
+    });
+
+    try {
+      console.log(`🚀 병렬 배치 처리 시작 (BATCH_SIZE=${BATCH_SIZE}, CONCURRENCY=${CONCURRENCY_LIMIT})`);
+
+      // 병렬 배치 처리 사용
+      const { items: allGeneratedItems, inputTokens: totalInputTokens, outputTokens: totalOutputTokens } =
+        await generateWordsInBatchesParallel(nonEmptyRows);
+
       // 생성 중 토스트 닫기
       toast.dismiss('generating');
-      
+
       console.log('생성 완료! 총', allGeneratedItems.length, '개');
       console.log(`📊 총 토큰 사용량 - 입력: ${totalInputTokens}, 출력: ${totalOutputTokens}`);
-      
+
       const vocabularyItems = allGeneratedItems.map((item, index) => ({
         ...item,
         id: index + 1
       }));
-      
+
       // 입력창 표에 생성된 데이터 반영
       setRows(convertToCellData(vocabularyItems));
-      
+
       // 완료 토스트 - dismiss 후 충분한 딜레이 (1초)
       setTimeout(() => {
-        toast.success(`${vocabularyItems.length}개 단어 생성 완료!`, { 
+        toast.success(`${vocabularyItems.length}개 단어 생성 완료!`, {
           duration: 1000
         });
       }, 300);
-      
+
       onSave(vocabularyItems, { inputTokens: totalInputTokens, outputTokens: totalOutputTokens });
     } catch (error) {
       console.error('생성 오류:', error);
+      toast.dismiss('generating');
       toast.error('AI 생성 중 오류가 발생했습니다.', { duration: 1000 });
     } finally {
       setIsGenerating(false);

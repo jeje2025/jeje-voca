@@ -30,7 +30,6 @@ import { motion } from 'motion/react';
 import { Header } from './components/Header';
 import { SubjectsSection } from './components/SubjectsSection';
 import { ProgressCard } from './components/ProgressCard';
-import { DailyStreak } from './components/DailyStreak';
 import { CalendarWidget } from './components/CalendarWidget';
 import { BottomNavigation } from './components/BottomNavigation';
 import { QuizScreen } from './components/QuizScreen';
@@ -38,7 +37,27 @@ import { GameMapQuizScreen } from './components/GameMapQuizScreen';
 import { QuizCompletionScreen } from './components/QuizCompletionScreen';
 import { AITutorScreen } from './components/AITutorScreen';
 
-export type Screen = 'login' | 'signup' | 'home' | 'quiz' | 'game-map-quiz' | 'quiz-completion' | 'ai' | 'profile' | 'subject-detail' | 'videos' | 'vocabulary-list' | 'lesson-player' | 'text-extractor' | 'word-list' | 'flashcard' | 'gift' | 'word-selection' | 'vocabulary-creator' | 'full-calendar';
+export type Screen =
+  | 'login'
+  | 'signup'
+  | 'home'
+  | 'quiz'
+  | 'game-map-quiz'
+  | 'quiz-completion'
+  | 'ai'
+  | 'profile'
+  | 'subject-detail'
+  | 'videos'
+  | 'vocabulary-list'
+  | 'lesson-player'
+  | 'text-extractor'
+  | 'word-list'
+  | 'flashcard'
+  | 'gift'
+  | 'word-selection'
+  | 'vocabulary-creator'
+  | 'full-calendar'
+  | 'calendar';
 
 export interface Subject {
   id: string;
@@ -87,8 +106,6 @@ export default function App() {
   const [accessToken, setAccessToken] = useState<string>('');
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userXP, setUserXP] = useState(5500);
-  const [streakCount, setStreakCount] = useState(3);
-  const [lastActiveDate, setLastActiveDate] = useState<string>(new Date().toDateString());
   const [completionData, setCompletionData] = useState({
     xpGained: 0,
     completionTime: '0:00',
@@ -211,57 +228,6 @@ export default function App() {
     triggerProgressSave();
   };
 
-  const handleStreakIncrease = () => {
-    const today = new Date().toDateString();
-    
-    // Calculate yesterday's date
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toDateString();
-    
-    // If already studied today, don't increase streak
-    if (lastActiveDate === today) {
-      console.log('📅 Already studied today - streak maintained');
-      return;
-    }
-    
-    // If studied yesterday, increase streak
-    if (lastActiveDate === yesterdayStr) {
-      setStreakCount(prev => prev + 1);
-      setLastActiveDate(today);
-      
-      // Show streak notification
-      setNotificationData({
-        type: 'streak',
-        title: 'Streak Extended!',
-        subtitle: `${streakCount + 1} days in a row!`,
-        xpGain: 0
-      });
-      setShowProgressNotification(true);
-      
-      console.log(`🔥 Streak extended to ${streakCount + 1} days!`);
-    } 
-    // If more than 1 day gap, reset streak to 1
-    else {
-      setStreakCount(1);
-      setLastActiveDate(today);
-      
-      // Show streak reset notification
-      setNotificationData({
-        type: 'streak',
-        title: 'Streak Started!',
-        subtitle: 'Keep going to build your streak!',
-        xpGain: 0
-      });
-      setShowProgressNotification(true);
-      
-      console.log('🔄 Streak reset to 1 day');
-    }
-    
-    // Trigger save indicator
-    triggerProgressSave();
-  };
-
   const handleLessonClick = (lessonTitle: string) => {
     setSelectedLesson(lessonTitle);
     navigateToScreen('lesson-player');
@@ -334,8 +300,6 @@ export default function App() {
   // Handle progress loading from storage
   const handleProgressLoaded = (progress: UserProgress) => {
     setUserXP(progress.userXP);
-    setStreakCount(progress.streakCount);
-    setLastActiveDate(progress.lastActiveDate);
     setCurrentProgress(progress.currentProgress);
     setTotalQuizzesCompleted(progress.totalQuizzesCompleted);
     setLevelProgress(progress.levelProgress);
@@ -410,8 +374,30 @@ export default function App() {
         return;
       }
 
-      // Don't load for special sections
+      // Load special sections (starred, graveyard, wrong-answers)
       if (selectedVocabulary.id === 'starred' || selectedVocabulary.id === 'graveyard' || selectedVocabulary.id === 'wrong-answers') {
+        try {
+          console.log(`🔄 Loading ${selectedVocabulary.id} words...`);
+          const response = await fetch(
+            `https://${projectId}.supabase.co/functions/v1/server/${selectedVocabulary.id}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${auth.getAuthToken()}`,
+              },
+            }
+          );
+
+          if (!response.ok) {
+            throw new Error(`Failed to load ${selectedVocabulary.id} words`);
+          }
+
+          const data = await response.json();
+          console.log(`✅ Loaded ${data.words?.length || 0} ${selectedVocabulary.id} words`);
+          setVocabularyWords(data.words || []);
+        } catch (error) {
+          console.error(`❌ Error loading ${selectedVocabulary.id} words:`, error);
+          setVocabularyWords([]);
+        }
         return;
       }
 
@@ -515,10 +501,7 @@ export default function App() {
               />
             </div>
             <div className="px-6">
-              <DailyStreak streakCount={streakCount} />
-            </div>
-            <div className="px-6">
-              <CalendarWidget onClick={() => navigateToScreen('full-calendar')} />
+              <CalendarWidget onClick={() => navigateToScreen('calendar')} />
             </div>
             {/* Copyright Footer */}
             <div className="px-6 pb-4 pt-3">
@@ -529,17 +512,15 @@ export default function App() {
           </div>
         );
       case 'quiz':
-        return <QuizScreen onBack={navigateBack} onXPGain={handleXPGain} onStreakIncrease={handleStreakIncrease} />;
+        return <QuizScreen onBack={navigateBack} onXPGain={handleXPGain} />;
       case 'game-map-quiz':
-        return <GameMapQuizScreen 
+        return <GameMapQuizScreen
           onBack={navigateBack}
           onBackToHome={handleBackToHome}
-          onXPGain={handleXPGain} 
-          onStreakIncrease={handleStreakIncrease} 
-          userXP={userXP} 
-          streakCount={streakCount} 
-          selectedSubject={selectedSubject} 
-          vocabularyTitle={selectedVocabulary?.title} 
+          onXPGain={handleXPGain}
+          userXP={userXP}
+          selectedSubject={selectedSubject}
+          vocabularyTitle={selectedVocabulary?.title}
           onQuizCompletion={handleQuizCompletion}
           onWrongAnswer={wordLists.addWrongAnswer}
           starredWordIds={wordLists.starredWords}
@@ -551,13 +532,12 @@ export default function App() {
           getAuthToken={auth.getAuthToken}
         />;
       case 'quiz-completion':
-        return <QuizCompletionScreen 
+        return <QuizCompletionScreen
           onBack={navigateBack}
           onRetakeQuiz={handleRetakeQuiz}
           onNextChallenge={handleNextChallenge}
           userXP={userXP}
           xpGained={completionData.xpGained}
-          streakCount={streakCount}
           completionTime={completionData.completionTime}
           accuracy={completionData.accuracy}
           totalQuestions={completionData.totalQuestions}
@@ -567,24 +547,36 @@ export default function App() {
       case 'ai':
         return <AITutorScreen onBack={navigateBack} />;
       case 'profile':
-        return <ProfileScreen onBack={navigateBack} userXP={userXP} streakCount={streakCount} profileImage={profileImage} levelProgress={levelProgress} />;
+        return <ProfileScreen onBack={navigateBack} userXP={userXP} profileImage={profileImage} levelProgress={levelProgress} />;
       case 'videos':
         return <VideosScreen onBack={navigateBack} getAuthToken={auth.getAuthToken} />;
       case 'vocabulary-list':
-        return <VocabularyListScreen 
+        return <VocabularyListScreen
           key={Date.now()} // Force remount when navigating to this screen
-          onBack={navigateBack} 
+          onBack={navigateBack}
           onSelectVocabulary={(id, title) => {
             setSelectedVocabulary({ id, title });
-            setSelectedSubject({ 
-              id: id, 
-              name: title, 
-              description: '', 
-              progress: 0, 
-              icon: null, 
-              color: '#491B6D' 
+            setSelectedSubject({
+              id: id,
+              name: title,
+              description: '',
+              progress: 0,
+              icon: null,
+              color: '#491B6D'
             });
             navigateToScreen('game-map-quiz');
+          }}
+          onStartFlashcards={(id, title) => {
+            setSelectedVocabulary({ id, title });
+            setSelectedSubject({
+              id: id,
+              name: title,
+              description: '',
+              progress: 0,
+              icon: null,
+              color: '#491B6D'
+            });
+            navigateToScreen('flashcard');
           }}
           getAuthToken={auth.getAuthToken}
         />;
@@ -740,6 +732,8 @@ export default function App() {
         />; 
       case 'full-calendar':
         return <FullCalendarScreen onBack={navigateBack} onHomeClick={handleBackToHome} />;
+      case 'calendar':
+        return <StudentCalendarScreen onBack={navigateBack} />;
       default:
         return null;
     }
@@ -766,8 +760,6 @@ export default function App() {
       {/* Progress Manager - Invisible component for handling saves */}
       <ProgressManager
         userXP={userXP}
-        streakCount={streakCount}
-        lastActiveDate={lastActiveDate}
         currentProgress={currentProgress}
         totalQuizzesCompleted={totalQuizzesCompleted}
         onProgressLoaded={handleProgressLoaded}

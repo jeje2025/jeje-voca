@@ -21,7 +21,6 @@ interface QuizCompletionScreenProps {
   onNextChallenge: () => void;
   userXP: number;
   xpGained: number;
-  streakCount: number;
   completionTime: string;
   accuracy: number;
   totalQuestions: number;
@@ -35,7 +34,6 @@ export function QuizCompletionScreen({
   onNextChallenge,
   userXP,
   xpGained,
-  streakCount,
   completionTime,
   accuracy,
   totalQuestions,
@@ -265,15 +263,6 @@ export function QuizCompletionScreen({
                 </div>
                 <p className="text-sm text-gray-600 mb-1">XP Gained</p>
                 <p className="font-bold text-[#091A7A]">+{xpGained}</p>
-              </div>
-
-              {/* Streak Bonus */}
-              <div className="text-center">
-                <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center mb-2 mx-auto">
-                  <Flame className="w-6 h-6 text-orange-600" />
-                </div>
-                <p className="text-sm text-gray-600 mb-1">Day Streak</p>
-                <p className="font-bold text-[#091A7A]">{streakCount} days</p>
               </div>
 
               {/* Achievement */}

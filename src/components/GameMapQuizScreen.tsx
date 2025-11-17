@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Target, 
@@ -6,7 +6,6 @@ import {
   Puzzle, 
   Key, 
   Trophy, 
-  Flame, 
   Star,
   CheckCircle,
   Circle,
@@ -16,7 +15,8 @@ import {
   Layers,
   Home,
   ChevronRight,
-  Gamepad2
+  Gamepad2,
+  ArrowLeft
 } from 'lucide-react';
 import { BackButton } from './BackButton';
 import { QuizStatusUpdate } from './QuizStatusUpdate';
@@ -33,9 +33,7 @@ interface GameMapQuizScreenProps {
   onBack: () => void;
   onBackToHome?: () => void;
   onXPGain: (points: number) => void;
-  onStreakIncrease: () => void;
   userXP: number;
-  streakCount: number;
   selectedSubject?: {
     id: string;
     name: string;
@@ -71,13 +69,103 @@ interface Stage {
   xpReward: number;
 }
 
+type QuestionType = 'multiple-choice' | 'multi-select' | 'sentence';
+
 interface Question {
   id: number;
+  type?: QuestionType;
   question: string;
   options: string[];
-  correctAnswer: number;
-  explanation: string;
+  correctAnswer?: number;
+  correctAnswers?: number[];
+  explanation?: string;
+  word?: string;
+  wordId?: string;
+  sentenceData?: {
+    english: string;
+    translation?: string;
+  };
 }
+
+interface NormalizedWord {
+  id: string;
+  word: string;
+  meaning: string;
+  translation?: string;
+  example?: string;
+  derivatives: Array<{ word: string; meaning: string }>;
+  synonyms: string[];
+  antonyms: string[];
+}
+
+const parseListField = (value: any): string[] => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => (typeof entry === 'string' ? entry : entry?.word || ''))
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/[,;/]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+};
+
+const parseDerivativeField = (value: any): Array<{ word: string; meaning: string }> => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        if (typeof entry === 'string') {
+          const [word, meaning] = entry.split(':').map((item) => item.trim());
+          return { word, meaning: meaning || '' };
+        }
+        return {
+          word: entry?.word?.trim() || '',
+          meaning: entry?.meaning?.trim() || ''
+        };
+      })
+      .filter((entry) => entry.word);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/[,;]/)
+      .map((segment) => {
+        const [word, meaning] = segment.split(':').map((item) => item.trim());
+        return { word, meaning: meaning || '' };
+      })
+      .filter((entry) => entry.word);
+  }
+  return [];
+};
+
+const normalizeWordForQuiz = (word: any): NormalizedWord | null => {
+  const normalizedWord = word?.word || word?.term;
+  if (!normalizedWord) return null;
+
+  const normalizedId = word?.id || normalizedWord;
+  if (!normalizedId) return null;
+
+  return {
+    id: String(normalizedId),
+    word: normalizedWord,
+    meaning: word?.meaning || word?.translation || '',
+    translation: word?.translation || '',
+    example: word?.example || word?.example_sentence || '',
+    derivatives: parseDerivativeField(word?.derivatives),
+    synonyms: parseListField(word?.synonyms),
+    antonyms: parseListField(word?.antonyms)
+  };
+};
+
+const removeParentheticalHints = (text: string) => {
+  if (!text) return text;
+  return text.replace(/\([^)]*\)/g, '_____');
+};
 
 // Subject-specific question sets
 const subjectQuestions: Record<string, Record<number, Question[]>> = {
@@ -832,7 +920,6 @@ const subjectQuestions: Record<string, Record<number, Question[]>> = {
 };
 
 // Default to math questions if no subject is specified
-const stageQuestions: Record<number, Question[]> = subjectQuestions.math;
 
 // Subject-specific stage configurations
 const subjectStages: Record<string, Stage[]> = {
@@ -873,13 +960,266 @@ const subjectNames: Record<string, string> = {
   social: "Social Studies Journey"
 };
 
-export function GameMapQuizScreen({ 
-  onBack, 
+const stageModeAvailability: Record<number, Array<'normal' | 'match' | 'game'>> = {
+  1: ['normal', 'match', 'game'],
+  2: ['normal'],
+  3: ['normal'],
+  4: ['normal'],
+  5: ['normal']
+};
+
+const shuffleArray = <T,>(array: T[]): T[] => {
+  return [...array].sort(() => Math.random() - 0.5);
+};
+
+const generateMeaningQuestions = (words: any[], limit = 20): Question[] => {
+  const candidates = words.filter((word) => word?.id && word?.word && word?.meaning);
+  if (!candidates.length) return [];
+
+  const meaningPool = candidates.map((word) => word.meaning);
+  let idx = 1;
+  const questions: Question[] = [];
+
+  shuffleArray(candidates).forEach((word) => {
+    if (questions.length >= limit) return;
+    const distractors = shuffleArray(
+      meaningPool.filter((meaning) => meaning && meaning !== word.meaning)
+    ).slice(0, 3);
+    if (distractors.length < 3) return;
+    const options = shuffleArray([word.meaning, ...distractors]);
+    questions.push({
+      id: idx++,
+      type: 'multiple-choice',
+      wordId: word.id,
+      word: word.word,
+      question: `${word.word}의 뜻으로 가장 알맞은 것은?`,
+      options,
+      correctAnswer: options.indexOf(word.meaning),
+      explanation: `${word.word}: ${word.meaning}`
+    });
+  });
+
+  return questions;
+};
+
+const generateDerivativeQuestions = (words: any[], limit = 12): Question[] => {
+  const derivativeEntries = words.flatMap((word: any) =>
+    (word?.derivatives || []).map((der: any) => ({
+      wordId: word.id,
+      root: word.word,
+      derivative: der?.word,
+      meaning: der?.meaning
+    }))
+  ).filter((entry) => entry.wordId && entry.derivative && entry.meaning);
+
+  if (!derivativeEntries.length) return [];
+
+  const meaningPool = derivativeEntries.map((entry) => entry.meaning);
+  let idx = 1;
+  const questions: Question[] = [];
+
+  shuffleArray(derivativeEntries).forEach((entry) => {
+    if (questions.length >= limit) return;
+    const distractors = shuffleArray(
+      meaningPool.filter((meaning) => meaning && meaning !== entry.meaning)
+    ).slice(0, 3);
+    if (distractors.length < 3) return;
+    const options = shuffleArray([entry.meaning, ...distractors]);
+    questions.push({
+      id: idx++,
+      type: 'multiple-choice',
+      wordId: entry.wordId,
+      question: `'${entry.root}'의 파생어 '${entry.derivative}' 뜻은?`,
+      options,
+      correctAnswer: options.indexOf(entry.meaning),
+      explanation: `${entry.derivative} (${entry.root}): ${entry.meaning}`
+    });
+  });
+
+  return questions;
+};
+
+const generateSynAntQuestions = (words: any[], limit = 12): Question[] => {
+  const questions: Question[] = [];
+  const candidates = words.filter(
+    (word) =>
+      word?.id && ((word?.synonyms?.length || 0) >= 2 || (word?.antonyms?.length || 0) >= 2)
+  );
+  const fallbackOptions = words.map((word) => word.word).filter(Boolean);
+
+  shuffleArray(candidates).forEach((word) => {
+    if (questions.length >= limit) return;
+    const useSynonym =
+      (word.synonyms?.length || 0) >= 2 &&
+      ((word.antonyms?.length || 0) < 2 || Math.random() > 0.5);
+    const pool = useSynonym ? (word.synonyms || []) : (word.antonyms || []);
+    if (pool.length < 2) return;
+
+    const targetCount = Math.min(pool.length, 3);
+    const requiredCount = Math.max(2, targetCount);
+    const correctWords = shuffleArray(pool).slice(0, requiredCount);
+
+    const distractorPool = shuffleArray(
+      [
+        ...fallbackOptions,
+        ...(words.flatMap((w) => (useSynonym ? w.synonyms || [] : w.antonyms || [])) as string[])
+      ].filter((item) => item && !correctWords.includes(item))
+    );
+
+    const mergedOptions: string[] = [...correctWords];
+    distractorPool.forEach((value) => {
+      if (mergedOptions.length >= 8) return;
+      if (!mergedOptions.includes(value)) mergedOptions.push(value);
+    });
+
+    if (mergedOptions.length < 8) return;
+
+    const distractorOnly = mergedOptions.filter((option) => !correctWords.includes(option));
+    const options = shuffleArray([
+      ...correctWords,
+      ...shuffleArray(distractorOnly).slice(0, 8 - correctWords.length)
+    ]);
+
+    const correctIndexes = options.reduce<number[]>((acc, option, index) => {
+      if (correctWords.includes(option)) acc.push(index);
+      return acc;
+    }, []);
+
+    questions.push({
+      id: questions.length + 1,
+      type: 'multi-select',
+      wordId: word.id,
+      question: `'${word.word}'의 ${useSynonym ? '동의어' : '반의어'}를 모두 선택하세요 (${correctWords.length}개)`,
+      options,
+      correctAnswers: correctIndexes,
+      explanation: `${useSynonym ? '동의어' : '반의어'}: ${correctWords.join(', ')}`
+    });
+  });
+
+  return questions;
+};
+
+const maskSentence = (sentence: string, target: string) => {
+  if (!sentence || !target) return sentence;
+  const regex = new RegExp(target, 'gi');
+  return sentence.replace(regex, '_____');
+};
+
+const generateSentenceQuestions = (words: any[], limit = 12): Question[] => {
+  const candidates = words.filter((word) => word?.id && word?.word && word?.example);
+  if (!candidates.length) return [];
+
+  const wordPool = words.map((word) => word.word).filter(Boolean);
+  let idx = 1;
+  const questions: Question[] = [];
+
+  shuffleArray(candidates).forEach((word) => {
+    if (questions.length >= limit) return;
+    if (!word.word || !word.example) return;
+    const distractors = shuffleArray(
+      wordPool.filter((entry) => entry && entry !== word.word)
+    ).slice(0, 3);
+    if (distractors.length < 3) return;
+    const options = shuffleArray([word.word, ...distractors]);
+
+    questions.push({
+      id: idx++,
+      type: 'sentence',
+      wordId: word.id,
+      question: '빈칸을 채울 알맞은 단어를 고르세요.',
+      options,
+      correctAnswer: options.indexOf(word.word),
+      explanation: `${word.word}: ${word.meaning || ''}`,
+      word: word.word,
+      sentenceData: {
+        english: removeParentheticalHints(maskSentence(word.example, word.word)),
+        translation: word.translation
+          ? removeParentheticalHints(maskSentence(word.translation, word.word))
+          : removeParentheticalHints(word.translation || word.meaning || '')
+      }
+    });
+  });
+
+  return questions;
+};
+
+const cloneQuestion = (question: Question, newId: number): Question => ({
+  ...question,
+  id: newId,
+  options: [...question.options],
+  correctAnswers: question.correctAnswers ? [...question.correctAnswers] : undefined,
+  wordId: question.wordId,
+  sentenceData: question.sentenceData ? { ...question.sentenceData } : undefined
+});
+
+const generateAllInOneQuestions = (
+  sources: {
+    meaningQuestions: Question[];
+    derivativeQuestions: Question[];
+    synAntQuestions: Question[];
+    sentenceQuestions: Question[];
+  },
+  limit = 30
+): Question[] => {
+  const pool = [
+    ...sources.meaningQuestions,
+    ...sources.derivativeQuestions,
+    ...sources.synAntQuestions,
+    ...sources.sentenceQuestions
+  ];
+
+  if (!pool.length) return [];
+
+  const questions: Question[] = [];
+  const shuffled = shuffleArray(pool);
+  let index = 1;
+
+  for (const question of shuffled) {
+    if (questions.length >= limit) break;
+    questions.push(cloneQuestion(question, index++));
+  }
+
+  while (questions.length < limit && sources.meaningQuestions.length) {
+    const fallback = sources.meaningQuestions[questions.length % sources.meaningQuestions.length];
+    questions.push(cloneQuestion(fallback, questions.length + 1));
+  }
+
+  return questions;
+};
+
+const buildQuestionBank = (words: any[]): Record<number, Question[]> | null => {
+  if (!words || !words.length) return null;
+
+  const normalizedWords = words
+    .map(normalizeWordForQuiz)
+    .filter((word): word is NormalizedWord => !!word);
+  if (!normalizedWords.length) return null;
+
+  const meaningQuestions = generateMeaningQuestions(normalizedWords, 20);
+  if (!meaningQuestions.length) return null;
+
+  const derivativeQuestions = generateDerivativeQuestions(normalizedWords, 12);
+  const synAntQuestions = generateSynAntQuestions(normalizedWords, 12);
+  const sentenceQuestions = generateSentenceQuestions(normalizedWords, 12);
+  const allInOneQuestions = generateAllInOneQuestions(
+    { meaningQuestions, derivativeQuestions, synAntQuestions, sentenceQuestions },
+    30
+  );
+
+  return {
+    1: meaningQuestions,
+    2: derivativeQuestions.length ? derivativeQuestions : meaningQuestions,
+    3: synAntQuestions.length ? synAntQuestions : meaningQuestions,
+    4: sentenceQuestions.length ? sentenceQuestions : meaningQuestions,
+    5: allInOneQuestions.length ? allInOneQuestions : meaningQuestions
+  };
+};
+
+export function GameMapQuizScreen({
+  onBack,
   onBackToHome,
-  onXPGain, 
-  onStreakIncrease, 
-  userXP, 
-  streakCount,
+  onXPGain,
+  userXP: _userXP,
   selectedSubject,
   vocabularyTitle,
   onQuizCompletion,
@@ -894,15 +1234,15 @@ export function GameMapQuizScreen({
 }: GameMapQuizScreenProps) {
   // Get subject-specific stages and questions
   const subjectId = selectedSubject?.id || 'math';
-  const currentQuestions = subjectQuestions[subjectId] || subjectQuestions.math;
   const journeyName = vocabularyTitle || subjectNames[subjectId] || "Math Journey";
   
   const [stages, setStages] = useState<Stage[]>(subjectStages[subjectId] || subjectStages.math);
 
   const [currentStage, setCurrentStage] = useState<number | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
+  const [selectedAnswers, setSelectedAnswers] = useState<number[]>([]);
   const [showFeedback, setShowFeedback] = useState(false);
+  const [lastAnswerCorrect, setLastAnswerCorrect] = useState<boolean | null>(null);
   const [stageScore, setStageScore] = useState(0);
   const [showStageComplete, setShowStageComplete] = useState(false);
   const [showVictory, setShowVictory] = useState(false);
@@ -930,6 +1270,13 @@ export function GameMapQuizScreen({
   // State for vocabulary words
   const [vocabularyWords, setVocabularyWords] = useState<any[]>([]);
   const [isLoadingWords, setIsLoadingWords] = useState(true);
+  const [showSentenceTranslation, setShowSentenceTranslation] = useState(false);
+  const dynamicQuestionBank = useMemo<Record<number, Question[]> | null>(
+    () => buildQuestionBank(vocabularyWords),
+    [vocabularyWords]
+  );
+  const questionBank: Record<number, Question[]> =
+    dynamicQuestionBank || subjectQuestions[subjectId] || subjectQuestions.math;
 
   // Load vocabulary words from server
   useEffect(() => {
@@ -982,18 +1329,24 @@ export function GameMapQuizScreen({
     loadVocabularyWords();
   }, [selectedSubject?.id]);
 
+  useEffect(() => {
+    setShowSentenceTranslation(false);
+  }, [currentQuestion, currentStage]);
+
   const handleStageClick = (stageId: number) => {
     const stage = stages.find(s => s.id === stageId);
-    if (stage && (stage.status === 'current' || stage.status === 'completed')) {
-      // Stage 1, 2, 3은 모드 선택 표시
-      if (stageId === 1 || stageId === 2 || stageId === 3) {
-        setPendingStageId(stageId);
-        setShowQuizModeSelector(true);
-      } else {
-        // 다른 스테이지는 바로 시작
-        startQuiz(stageId, 'normal');
-      }
+    if (!stage) return;
+
+    const modes = stageModeAvailability[stageId] || ['normal'];
+
+    if (modes.length === 1) {
+      setSelectedQuizMode(modes[0]);
+      startQuiz(stageId, modes[0]);
+      return;
     }
+
+    setPendingStageId(stageId);
+    setShowQuizModeSelector(true);
   };
 
   const handleOpenPdfExport = () => {
@@ -1008,28 +1361,54 @@ export function GameMapQuizScreen({
     setCurrentStage(stageId);
     setCurrentQuestion(0);
     setStageScore(0);
-    setSelectedAnswer(null);
+    setSelectedAnswers([]);
     setShowFeedback(false);
+    setLastAnswerCorrect(null);
     setStartTime(new Date());
     setCorrectAnswersCount(0);
     setSelectedQuizMode(mode);
     setShowQuizModeSelector(false);
     setPendingStageId(null);
+    setShowSentenceTranslation(false);
   };
 
   const handleAnswerSelect = (answerIndex: number) => {
     if (showFeedback) return;
-    setSelectedAnswer(answerIndex);
+    const stageQuestions = currentStage ? questionBank[currentStage] : null;
+    const question = stageQuestions ? stageQuestions[currentQuestion] : null;
+    if (!question) return;
+
+    if (question.type === 'multi-select') {
+      setSelectedAnswers((prev) =>
+        prev.includes(answerIndex)
+          ? prev.filter((value) => value !== answerIndex)
+          : [...prev, answerIndex]
+      );
+    } else {
+      setSelectedAnswers([answerIndex]);
+    }
   };
 
   const handleSubmitAnswer = () => {
-    if (selectedAnswer === null || !currentStage) return;
+    if (!currentStage) return;
     
-    const questions = currentQuestions[currentStage];
+    const questions = questionBank[currentStage] || [];
     const currentQ = questions[currentQuestion];
-    const isCorrect = selectedAnswer === currentQ.correctAnswer;
+    if (!currentQ || selectedAnswers.length === 0) return;
+
+    let isCorrect = false;
+    if (currentQ.type === 'multi-select' && currentQ.correctAnswers) {
+      const sortedSelected = [...selectedAnswers].sort();
+      const sortedCorrect = [...currentQ.correctAnswers].sort();
+      isCorrect =
+        sortedSelected.length === sortedCorrect.length &&
+        sortedSelected.every((value, index) => value === sortedCorrect[index]);
+    } else if (typeof currentQ.correctAnswer === 'number') {
+      isCorrect = selectedAnswers[0] === currentQ.correctAnswer;
+    }
     
     setShowFeedback(true);
+    setLastAnswerCorrect(isCorrect);
     
     if (isCorrect) {
       setStageScore(prev => prev + 1);
@@ -1040,18 +1419,24 @@ export function GameMapQuizScreen({
       setTimeout(() => setShowConfetti(false), 1000);
     } else {
       // 틀린 답변 추적 - 질문 ID를 단어 ID로 사용
-      if (onWrongAnswer) {
-        // currentQ.id를 문자열로 변환하여 전달
-        onWrongAnswer(`${currentStage}-${currentQ.id}`);
+      const wrongId = currentQ.wordId || currentQ.word;
+      if (onWrongAnswer && wrongId) {
+        onWrongAnswer(wrongId);
       }
     }
 
     setTimeout(() => {
       if (currentQuestion < questions.length - 1) {
         setCurrentQuestion(prev => prev + 1);
-        setSelectedAnswer(null);
+        setSelectedAnswers([]);
         setShowFeedback(false);
+        setLastAnswerCorrect(null);
+        setShowSentenceTranslation(false);
       } else {
+        setSelectedAnswers([]);
+        setShowFeedback(false);
+        setLastAnswerCorrect(null);
+        setShowSentenceTranslation(false);
         completeStage();
       }
     }, 2500);
@@ -1087,7 +1472,6 @@ export function GameMapQuizScreen({
     // Award stage completion XP
     onXPGain(stage.xpReward);
     setSessionXP(prev => prev + stage.xpReward);
-    onStreakIncrease();
 
     setShowStageComplete(true);
     
@@ -1103,7 +1487,7 @@ export function GameMapQuizScreen({
         const seconds = Math.floor((completionTimeMs % 60000) / 1000);
         const completionTime = `${minutes}:${seconds.toString().padStart(2, '0')}`;
         
-        const totalQuestions = Object.values(currentQuestions).flat().length;
+        const totalQuestions = Object.values(questionBank).flat().length;
         const accuracy = Math.round((correctAnswersCount / totalQuestions) * 100);
         
         // Trigger full journey completion screen
@@ -1123,8 +1507,10 @@ export function GameMapQuizScreen({
     setCurrentStage(null);
     setShowStageComplete(false);
     setCurrentQuestion(0);
-    setSelectedAnswer(null);
+    setSelectedAnswers([]);
     setShowFeedback(false);
+    setLastAnswerCorrect(null);
+    setShowSentenceTranslation(false);
     setStageScore(0);
   };
 
@@ -1276,26 +1662,6 @@ export function GameMapQuizScreen({
                   <span className="font-medium text-[#091A7A]">Score</span>
                 </div>
                 <span className="text-xl font-bold text-[#091A7A]">{stageScore}/5</span>
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-yellow-100 rounded-xl flex items-center justify-center">
-                    <Star className="w-5 h-5 text-yellow-600" />
-                  </div>
-                  <span className="font-medium text-[#091A7A]">XP Gained</span>
-                </div>
-                <span className="text-xl font-bold text-[#091A7A]">+{(stage?.xpReward || 0) + (stageScore * 10)}</span>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center">
-                    <Flame className="w-5 h-5 text-orange-600" />
-                  </div>
-                  <span className="font-medium text-[#091A7A]">Streak</span>
-                </div>
-                <span className="text-xl font-bold text-[#091A7A]">{streakCount} days</span>
               </div>
             </div>
           </motion.div>
@@ -1527,8 +1893,19 @@ export function GameMapQuizScreen({
     }
     
     // Normal quiz mode
-    const questions = currentQuestions[currentStage];
+    const questions = currentStage ? questionBank[currentStage] || [] : [];
     const currentQ = questions[currentQuestion];
+
+    if (!currentQ) {
+      return (
+        <div className="min-h-screen flex items-center justify-center text-[#091A7A]">
+          <p>준비된 문제가 없습니다. 단어를 더 추가해 주세요.</p>
+        </div>
+      );
+    }
+
+    const isMultiSelect = currentQ.type === 'multi-select';
+    const isSentenceQuestion = currentQ.type === 'sentence' && currentQ.sentenceData;
     
     return (
       <div className="h-full bg-transparent relative">
@@ -1584,22 +1961,6 @@ export function GameMapQuizScreen({
               </div>
             </div>
 
-            {/* Stats Row */}
-            <div className="flex items-center justify-center gap-6">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
-                  <Star className="w-4 h-4 text-yellow-600" />
-                </div>
-                <span className="text-sm font-medium text-[#091A7A]">{userXP + sessionXP} XP</span>
-              </div>
-              <div className="w-px h-6 bg-gray-200"></div>
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
-                  <Flame className="w-4 h-4 text-orange-600" />
-                </div>
-                <span className="text-sm font-medium text-[#091A7A]">{streakCount} day streak</span>
-              </div>
-            </div>
           </motion.div>
         </div>
 
@@ -1613,34 +1974,62 @@ export function GameMapQuizScreen({
             transition={{ delay: 0.4 }}
             className="bg-white/95 backdrop-blur-xl rounded-3xl p-8 shadow-lg border border-white/40"
           >
-            <div className="text-center">
+            <div className="text-center space-y-4">
               <h2 className="text-lg font-medium text-[#091A7A] leading-relaxed">
                 {currentQ.question}
               </h2>
+
+              {isSentenceQuestion && currentQ.sentenceData && (
+                <div className="space-y-3">
+                  <p className="text-base font-semibold text-[#1E1B4B]">
+                    {currentQ.sentenceData.english}
+                  </p>
+                  {currentQ.sentenceData.translation && (
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => setShowSentenceTranslation((prev) => !prev)}
+                        className="mx-auto px-4 py-2 rounded-full bg-[#F4F4FF] text-[#5B21B6] text-xs font-semibold shadow-inner"
+                      >
+                        {showSentenceTranslation ? '한글 숨기기' : '한글 보기'}
+                      </button>
+                      {showSentenceTranslation && (
+                        <p className="text-sm text-[#475569]">
+                          {currentQ.sentenceData.translation}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </motion.div>
 
           {/* Answer Options */}
-          <div className="space-y-3">
+          <div className={isMultiSelect ? "grid grid-cols-2 gap-3" : "space-y-3"}>
             {currentQ.options.map((option, index) => {
+              const isChosen = selectedAnswers.includes(index);
+              const isCorrectOption =
+                currentQ.correctAnswers?.includes(index) ||
+                (typeof currentQ.correctAnswer === 'number' && currentQ.correctAnswer === index);
+
               let cardStyle = "bg-white/95 border-white/40";
               let textColor = "text-[#091A7A]";
               let iconBg = "bg-gray-100";
               let iconColor = "text-gray-400";
-              
+
               if (showFeedback) {
-                if (index === currentQ.correctAnswer) {
+                if (isCorrectOption) {
                   cardStyle = "bg-emerald-50/95 border-emerald-200/60";
                   textColor = "text-emerald-700";
                   iconBg = "bg-emerald-100";
                   iconColor = "text-emerald-600";
-                } else if (index === selectedAnswer && index !== currentQ.correctAnswer) {
+                } else if (isChosen) {
                   cardStyle = "bg-red-50/95 border-red-200/60";
                   textColor = "text-red-700";
                   iconBg = "bg-red-100";
                   iconColor = "text-red-600";
                 }
-              } else if (selectedAnswer === index) {
+              } else if (isChosen) {
                 cardStyle = "bg-[#091A7A]/10 border-[#091A7A]/30";
                 textColor = "text-[#091A7A]";
                 iconBg = "bg-[#091A7A]";
@@ -1652,8 +2041,8 @@ export function GameMapQuizScreen({
                   key={index}
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.5 + index * 0.1 }}
-                  whileHover={{ scale: showFeedback ? 1 : 1.02, y: showFeedback ? 0 : -2 }}
+                  transition={{ delay: 0.5 + index * 0.05 }}
+                  whileHover={{ scale: showFeedback ? 1 : 1.01, y: showFeedback ? 0 : -2 }}
                   whileTap={{ scale: showFeedback ? 1 : 0.98 }}
                   onClick={() => handleAnswerSelect(index)}
                   disabled={showFeedback}
@@ -1668,7 +2057,7 @@ export function GameMapQuizScreen({
                     <span className={`font-medium text-left flex-1 ${textColor}`}>
                       {option}
                     </span>
-                    {showFeedback && index === currentQ.correctAnswer && (
+                    {showFeedback && isCorrectOption && (
                       <CheckCircle className="w-5 h-5 text-emerald-600" />
                     )}
                   </div>
@@ -1686,16 +2075,16 @@ export function GameMapQuizScreen({
                 exit={{ opacity: 0, y: -30 }}
                 transition={{ delay: 0.2 }}
                 className={`p-6 rounded-2xl backdrop-blur-xl border shadow-lg ${
-                  selectedAnswer === currentQ.correctAnswer 
+                  lastAnswerCorrect
                     ? 'bg-emerald-50/95 border-emerald-200/60' 
                     : 'bg-red-50/95 border-red-200/60'
                 }`}
               >
                 <div className="flex items-start gap-3 mb-3">
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                    selectedAnswer === currentQ.correctAnswer ? 'bg-emerald-100' : 'bg-red-100'
+                    lastAnswerCorrect ? 'bg-emerald-100' : 'bg-red-100'
                   }`}>
-                    {selectedAnswer === currentQ.correctAnswer ? (
+                    {lastAnswerCorrect ? (
                       <CheckCircle className="w-4 h-4 text-emerald-600" />
                     ) : (
                       <Circle className="w-4 h-4 text-red-600" />
@@ -1703,9 +2092,9 @@ export function GameMapQuizScreen({
                   </div>
                   <div className="flex-1">
                     <h3 className={`font-semibold text-sm mb-1 ${
-                      selectedAnswer === currentQ.correctAnswer ? 'text-emerald-700' : 'text-red-700'
+                      lastAnswerCorrect ? 'text-emerald-700' : 'text-red-700'
                     }`}>
-                      {selectedAnswer === currentQ.correctAnswer ? 'Excellent! +10 XP' : 'Not quite right'}
+                      {lastAnswerCorrect ? 'Excellent! +10 XP' : 'Not quite right'}
                     </h3>
                     <p className="text-sm text-gray-600 leading-relaxed">{currentQ.explanation}</p>
                   </div>
@@ -1723,18 +2112,18 @@ export function GameMapQuizScreen({
               className="flex justify-center pt-4"
             >
               <motion.button
-                whileHover={{ scale: selectedAnswer !== null ? 1.02 : 1 }}
-                whileTap={{ scale: selectedAnswer !== null ? 0.98 : 1 }}
+                whileHover={{ scale: selectedAnswers.length ? 1.02 : 1 }}
+                whileTap={{ scale: selectedAnswers.length ? 0.98 : 1 }}
                 onClick={handleSubmitAnswer}
-                disabled={selectedAnswer === null}
+                disabled={!selectedAnswers.length}
                 className={`px-12 py-4 rounded-2xl backdrop-blur-xl shadow-lg border transition-all duration-300 ${
-                  selectedAnswer !== null
+                  selectedAnswers.length
                     ? 'bg-[#091A7A] text-white border-[#091A7A] shadow-[#091A7A]/25'
                     : 'bg-white/70 text-gray-400 border-gray-200 cursor-not-allowed'
                 }`}
               >
                 <span className="font-semibold">
-                  {selectedAnswer !== null ? 'Submit Answer' : 'Select an answer'}
+                  {selectedAnswers.length ? 'Submit Answer' : 'Select an answer'}
                 </span>
               </motion.button>
             </motion.div>
@@ -1760,13 +2149,15 @@ export function GameMapQuizScreen({
 
   if (showFlashcards) {
     console.log('[GameMapQuizScreen] ✅ Flashcard state is TRUE, rendering FlashcardScreen');
+    console.log('[GameMapQuizScreen] vocabularyWords:', vocabularyWords?.length || 0);
     return (
-      <FlashcardScreen 
+      <FlashcardScreen
         onBack={() => {
           console.log('[GameMapQuizScreen] Flashcard back button clicked');
           setShowFlashcards(false);
         }}
         onBackToHome={onBackToHome}
+        vocabularyWords={vocabularyWords}
         starredWordIds={starredWordIds}
         graveyardWordIds={graveyardWordIds}
         onAddToStarred={onAddToStarred}
@@ -1875,9 +2266,8 @@ export function GameMapQuizScreen({
                 >
                   {/* Premium Stage Button */}
                   <motion.button
-                    whileTap={{ scale: stage.status !== 'locked' ? 0.92 : 1 }}
+                    whileTap={{ scale: 0.92 }}
                     onClick={() => handleStageClick(stage.id)}
-                    disabled={stage.status === 'locked'}
                     className={`relative w-[72px] h-[72px] rounded-3xl flex items-center justify-center transition-all duration-300 backdrop-blur-lg border-2 ${
                       stage.status === 'completed' 
                         ? 'bg-gradient-to-br from-emerald-400 via-emerald-500 to-emerald-600 border-white/30 text-white shadow-xl shadow-emerald-500/40' 
@@ -2072,111 +2462,131 @@ export function GameMapQuizScreen({
                 </p>
               </div>
 
-              <div className="space-y-3">
-                {/* Normal Mode */}
-                <motion.button
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => pendingStageId && startQuiz(pendingStageId, 'normal')}
-                  className={`w-full p-4 rounded-2xl shadow-lg flex items-center justify-between relative ${
-                    pendingStageId && completedModes[pendingStageId]?.has('normal')
-                      ? 'bg-gradient-to-br from-emerald-400 to-emerald-600 text-white'
-                      : 'bg-gradient-to-br from-[#7C3AED] to-[#A78BFA] text-white'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
-                      <Target className="w-5 h-5" />
-                    </div>
-                    <div className="text-left">
-                      <div className="text-sm" style={{ fontWeight: 700 }}>Normal</div>
-                      <div className="text-xs opacity-80">일반 객관식 퀴즈</div>
-                    </div>
-                  </div>
-                  {pendingStageId && completedModes[pendingStageId]?.has('normal') ? (
-                    <CheckCircle className="w-5 h-5" />
-                  ) : (
-                    <ChevronRight className="w-5 h-5" />
-                  )}
-                </motion.button>
+              {(() => {
+                const modalAvailableModes = pendingStageId
+                  ? stageModeAvailability[pendingStageId] || ['normal']
+                  : [];
 
-                {/* Match Mode */}
-                <motion.button
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => pendingStageId && startQuiz(pendingStageId, 'match')}
-                  className={`w-full p-4 rounded-2xl shadow-md flex items-center justify-between ${
-                    pendingStageId && completedModes[pendingStageId]?.has('match')
-                      ? 'bg-gradient-to-br from-emerald-400 to-emerald-600 text-white border-2 border-emerald-300'
-                      : 'bg-white border-2 border-[#A78BFA]'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                      pendingStageId && completedModes[pendingStageId]?.has('match')
-                        ? 'bg-white/20'
-                        : 'bg-[#EDE9FE]'
-                    }`}>
-                      <Puzzle className={`w-5 h-5 ${
-                        pendingStageId && completedModes[pendingStageId]?.has('match')
-                          ? 'text-white'
-                          : 'text-[#7C3AED]'
-                      }`} />
-                    </div>
-                    <div className="text-left">
-                      <div className="text-sm" style={{ 
-                        fontWeight: 700, 
-                        color: pendingStageId && completedModes[pendingStageId]?.has('match') ? '#fff' : '#491B6D' 
-                      }}>Match</div>
-                      <div className="text-xs" style={{ 
-                        color: pendingStageId && completedModes[pendingStageId]?.has('match') ? 'rgba(255,255,255,0.8)' : '#8B5CF6' 
-                      }}>단어-뜻 매칭 게임</div>
-                    </div>
-                  </div>
-                  {pendingStageId && completedModes[pendingStageId]?.has('match') ? (
-                    <CheckCircle className="w-5 h-5 text-white" />
-                  ) : (
-                    <ChevronRight className="w-5 h-5 text-[#7C3AED]" />
-                  )}
-                </motion.button>
+                return (
+                  <div className="space-y-3">
+                    {/* Normal Mode */}
+                    {modalAvailableModes.includes('normal') && (
+                      <motion.button
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => pendingStageId && startQuiz(pendingStageId, 'normal')}
+                        className={`w-full p-4 rounded-2xl shadow-lg flex items-center justify-between relative ${
+                          pendingStageId && completedModes[pendingStageId]?.has('normal')
+                            ? 'bg-gradient-to-br from-emerald-400 to-emerald-600 text-white'
+                            : 'bg-gradient-to-br from-[#7C3AED] to-[#A78BFA] text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                            <Target className="w-5 h-5" />
+                          </div>
+                          <div className="text-left">
+                            <div className="text-sm" style={{ fontWeight: 700 }}>Normal</div>
+                            <div className="text-xs opacity-80">일반 객관식 퀴즈</div>
+                          </div>
+                        </div>
+                        {pendingStageId && completedModes[pendingStageId]?.has('normal') ? (
+                          <CheckCircle className="w-5 h-5" />
+                        ) : (
+                          <ChevronRight className="w-5 h-5" />
+                        )}
+                      </motion.button>
+                    )}
 
-                {/* Game Mode */}
-                <motion.button
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => pendingStageId && startQuiz(pendingStageId, 'game')}
-                  className={`w-full p-4 rounded-2xl shadow-md flex items-center justify-between ${
-                    pendingStageId && completedModes[pendingStageId]?.has('game')
-                      ? 'bg-gradient-to-br from-emerald-400 to-emerald-600 text-white border-2 border-emerald-300'
-                      : 'bg-white border-2 border-[#A78BFA]'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                      pendingStageId && completedModes[pendingStageId]?.has('game')
-                        ? 'bg-white/20'
-                        : 'bg-[#EDE9FE]'
-                    }`}>
-                      <Gamepad2 className={`w-5 h-5 ${
-                        pendingStageId && completedModes[pendingStageId]?.has('game')
-                          ? 'text-white'
-                          : 'text-[#7C3AED]'
-                      }`} />
-                    </div>
-                    <div className="text-left">
-                      <div className="text-sm" style={{ 
-                        fontWeight: 700, 
-                        color: pendingStageId && completedModes[pendingStageId]?.has('game') ? '#fff' : '#491B6D' 
-                      }}>Game</div>
-                      <div className="text-xs" style={{ 
-                        color: pendingStageId && completedModes[pendingStageId]?.has('game') ? 'rgba(255,255,255,0.8)' : '#8B5CF6' 
-                      }}>재미있는 미니게임</div>
-                    </div>
+                    {/* Match Mode */}
+                    {modalAvailableModes.includes('match') && (
+                      <motion.button
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => pendingStageId && startQuiz(pendingStageId, 'match')}
+                        className={`w-full p-4 rounded-2xl shadow-md flex items-center justify-between ${
+                          pendingStageId && completedModes[pendingStageId]?.has('match')
+                            ? 'bg-gradient-to-br from-emerald-400 to-emerald-600 text-white border-2 border-emerald-300'
+                            : 'bg-white border-2 border-[#A78BFA]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                            pendingStageId && completedModes[pendingStageId]?.has('match')
+                              ? 'bg-white/20'
+                              : 'bg-[#EDE9FE]'
+                          }`}>
+                            <Puzzle className={`w-5 h-5 ${
+                              pendingStageId && completedModes[pendingStageId]?.has('match')
+                                ? 'text-white'
+                                : 'text-[#7C3AED]'
+                            }`} />
+                          </div>
+                          <div className="text-left">
+                            <div className="text-sm" style={{ 
+                              fontWeight: 700, 
+                              color: pendingStageId && completedModes[pendingStageId]?.has('match') ? '#fff' : '#491B6D' 
+                            }}>Match</div>
+                            <div className="text-xs" style={{ 
+                              color: pendingStageId && completedModes[pendingStageId]?.has('match') ? 'rgba(255,255,255,0.8)' : '#8B5CF6' 
+                            }}>단어-뜻 매칭 게임</div>
+                          </div>
+                        </div>
+                        {pendingStageId && completedModes[pendingStageId]?.has('match') ? (
+                          <CheckCircle className="w-5 h-5 text-white" />
+                        ) : (
+                          <ChevronRight className="w-5 h-5 text-[#7C3AED]" />
+                        )}
+                      </motion.button>
+                    )}
+
+                    {/* Game Mode */}
+                    {modalAvailableModes.includes('game') && (
+                      <motion.button
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => {
+                          if (pendingStageId === 1) {
+                            alert('준비중입니다!');
+                            return;
+                          }
+                          pendingStageId && startQuiz(pendingStageId, 'game');
+                        }}
+                        className={`w-full p-4 rounded-2xl shadow-md flex items-center justify-between ${
+                          pendingStageId && completedModes[pendingStageId]?.has('game')
+                            ? 'bg-gradient-to-br from-emerald-400 to-emerald-600 text-white border-2 border-emerald-300'
+                            : 'bg-white border-2 border-[#A78BFA]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                            pendingStageId && completedModes[pendingStageId]?.has('game')
+                              ? 'bg-white/20'
+                              : 'bg-[#EDE9FE]'
+                          }`}>
+                            <Gamepad2 className={`w-5 h-5 ${
+                              pendingStageId && completedModes[pendingStageId]?.has('game')
+                                ? 'text-white'
+                                : 'text-[#7C3AED]'
+                            }`} />
+                          </div>
+                          <div className="text-left">
+                            <div className="text-sm" style={{ 
+                              fontWeight: 700, 
+                              color: pendingStageId && completedModes[pendingStageId]?.has('game') ? '#fff' : '#491B6D' 
+                            }}>Game</div>
+                            <div className="text-xs" style={{ 
+                              color: pendingStageId && completedModes[pendingStageId]?.has('game') ? 'rgba(255,255,255,0.8)' : '#8B5CF6' 
+                            }}>재미있는 미니게임</div>
+                          </div>
+                        </div>
+                        {pendingStageId && completedModes[pendingStageId]?.has('game') ? (
+                          <CheckCircle className="w-5 h-5 text-white" />
+                        ) : (
+                          <ChevronRight className="w-5 h-5 text-[#7C3AED]" />
+                        )}
+                      </motion.button>
+                    )}
                   </div>
-                  {pendingStageId && completedModes[pendingStageId]?.has('game') ? (
-                    <CheckCircle className="w-5 h-5 text-white" />
-                  ) : (
-                    <ChevronRight className="w-5 h-5 text-[#7C3AED]" />
-                  )}
-                </motion.button>
-              </div>
+                );
+              })()}
 
               <motion.button
                 whileTap={{ scale: 0.95 }}
